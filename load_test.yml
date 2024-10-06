@@ -1,0 +1,97 @@
+config:
+  target: "http://localhost:8000"
+  http:
+    timeout: 10 # Set a 10-second timeout for requests
+  phases:
+    - duration: 60
+      arrivalRate: 2
+      rampTo: 10
+      name: "Warm up phase"
+    - duration: 120
+      arrivalRate: 10
+      name: "Sustained load"
+  payload:
+    - path: "users.csv"
+      fields:
+        - "email"
+        - "password"
+    - path: "posts.csv"
+      fields:
+        - "title"
+        - "content"
+  processor: "./functions.js"
+
+scenarios:
+  - name: "User registration and login"
+    weight: 1
+    flow:
+      - post:
+          url: "/api/signup"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+      - think: 1
+      - post:
+          url: "/api/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "userToken"
+      - think: 1
+
+  - name: "User operations"
+    weight: 2
+    flow:
+      - get:
+          url: "/api/users"
+          headers:
+            Authorization: "Bearer {{ userToken }}"
+      - think: 1
+      - function: "generateRandomId"
+      - get:
+          url: "/api/users/{{ id }}"
+          headers:
+            Authorization: "Bearer {{ userToken }}"
+      - think: 1
+      - put:
+          url: "/api/users/{{ id }}"
+          headers:
+            Authorization: "Bearer {{ userToken }}"
+          json:
+            name: "Updated User"
+            email: "updated{{ email }}"
+      - think: 1
+
+  - name: "Post operations"
+    weight: 3
+    flow:
+      - post:
+          url: "/post"
+          headers:
+            Authorization: "Bearer {{ userToken }}"
+          json:
+            title: "{{ title }}"
+            content: "{{ content }}"
+          capture:
+            - json: "$.id"
+              as: "postId"
+      - think: 1
+      - get:
+          url: "/post"
+      - think: 1
+      - get:
+          url: "/post/{{ postId }}"
+          headers:
+            Authorization: "Bearer {{ userToken }}"
+      - think: 1
+
+  - name: "Performance metrics"
+    weight: 1
+    flow:
+      - get:
+          url: "/metrics"
+      - think: 1
+      - get:
+          url: "/test"
